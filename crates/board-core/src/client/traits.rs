@@ -12,12 +12,12 @@ use crate::protocol::{
     ColumnCreateParams, ColumnDeleteParams, ColumnReorderParams, ColumnUpdateParams,
     CommentAddParams, CommentDeleteParams, CommentGetParams, CommentHistoryParams,
     CommentUpdateParams, DaemonStatus, DeletedResult, Event, HarnessCapabilitiesParams,
-    HarnessListResult, PaneSetTitleParams, PaneSetTitleResult, ProjectArchiveParams,
-    ProjectCreateParams, ProjectDetail, ProjectGetParams, ProjectListParams, ProjectListResult,
-    ProjectOpenParams, ProjectOpenResult, ProjectSelectParams, ProjectSelectedResult,
-    RunActionResult, RunCardParams, RunDoneParams, RunFocusParams, RunFocusResult, RunOutcome,
-    RunPaneExitedParams, SessionListResult, SpaceListParams, SpaceListResult, StopResult,
-    TemplateApplyParams, Visibility,
+    HarnessListResult, JiraImportParams, JiraImportResult, PaneSetTitleParams, PaneSetTitleResult,
+    ProjectArchiveParams, ProjectCreateParams, ProjectDetail, ProjectGetParams, ProjectListParams,
+    ProjectListResult, ProjectOpenParams, ProjectOpenResult, ProjectSelectParams,
+    ProjectSelectedResult, RunActionResult, RunCardParams, RunDoneParams, RunFocusParams,
+    RunFocusResult, RunOutcome, RunPaneExitedParams, SessionListResult, SpaceListParams,
+    SpaceListResult, StopResult, TemplateApplyParams, Visibility,
 };
 
 /// Blocking client to boardd. Object-safe so the TUI can hold `Box<dyn BoardClient>`.
@@ -504,6 +504,17 @@ pub trait BoardClient {
         };
         Ok(serde_json::from_value(
             self.call("pane.set_title", serde_json::to_value(p)?)?,
+        )?)
+    }
+
+    /// Import the current sprint's Jira issues into a local board: create or
+    /// select the target board, create or case-insensitively match its
+    /// Backlog/In Progress/Done columns, and create-or-update linked cards.
+    /// Never dispatches an agent, regardless of column trigger config.
+    /// Disabled or misconfigured `[jira]` surfaces as an error.
+    fn jira_import(&mut self, p: &JiraImportParams) -> anyhow::Result<JiraImportResult> {
+        Ok(serde_json::from_value(
+            self.call("jira.import", serde_json::to_value(p)?)?,
         )?)
     }
 }

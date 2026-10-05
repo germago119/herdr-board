@@ -685,6 +685,14 @@ pub struct CardCreateParams {
     pub space_cwd: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub position: Option<i64>,
+    /// Generic external-tracker identity (e.g. `jira`), set by an importer.
+    /// `None` = not linked. Ordinary card creation never sets these.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_url: Option<String>,
 }
 
 /// `card.update` params — any subset; `id` required.
@@ -713,6 +721,10 @@ pub struct CardUpdateParams {
     /// Working directory for a `new_workspace` space.
     #[serde(default, skip_serializing_if = "Patch::is_unchanged")]
     pub space_cwd: Patch<String>,
+    /// Best-effort browse URL for the linked external issue; `external_source`
+    /// / `external_key` are immutable identity, set only at creation.
+    #[serde(default, skip_serializing_if = "Patch::is_unchanged")]
+    pub external_url: Patch<String>,
 }
 
 /// `card.archive` params — archive (`true`) or restore (`false`) a card.
@@ -994,6 +1006,43 @@ pub struct SessionListResult {
     /// themselves. Missing on older serialized payloads, so default to empty.
     #[serde(default)]
     pub default_label: String,
+}
+
+// ---------------------------------------------------------------------------
+// jira methods
+// ---------------------------------------------------------------------------
+
+/// `jira.import` params — every field optional; unset falls back to the
+/// daemon's `[jira]` config (see `board_core::config::JiraConfig`).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct JiraImportParams {
+    /// Jira project key (e.g. `PROJ`); defaults to `[jira].project`, which
+    /// must be configured when no import override is supplied.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+    /// JQL query; defaults to `[jira].jql`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub jql: Option<String>,
+    /// Local board name to create-or-select; defaults to `[jira].board`, else
+    /// `"Jira: <project>"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub board: Option<String>,
+}
+
+/// `jira.import` result: a summary the CLI renders as text or JSON.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct JiraImportResult {
+    pub board_id: i64,
+    pub board_name: String,
+    pub project: String,
+    /// Total issues returned by the configured JQL (across all pages).
+    pub fetched: usize,
+    /// New cards created (previously unlinked issues).
+    pub created: usize,
+    /// Existing linked cards whose title, description, or column changed.
+    pub updated: usize,
+    /// Existing linked cards that already matched (no write performed).
+    pub unchanged: usize,
 }
 
 // ---------------------------------------------------------------------------

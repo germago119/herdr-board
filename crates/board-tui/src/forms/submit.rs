@@ -50,6 +50,7 @@ impl Form {
                     space_ref: self.card_space_ref(),
                     space_cwd: self.space_cwd(),
                     position: None,
+                    ..Default::default()
                 }))
             }
             FormKind::CardEdit { card_id } => {
@@ -73,6 +74,7 @@ impl Form {
                     space_kind: self.opt_space_kind(),
                     space_ref: Patch::from_option(self.card_space_ref()),
                     space_cwd: Patch::from_option(self.space_cwd()),
+                    ..Default::default()
                 }))
             }
             FormKind::ColumnCreate => {

@@ -154,6 +154,7 @@ pub fn merge_card_update(current: &Card, update: &CardUpdateParams) -> Card {
     }
     apply_patch(&mut merged.space_ref, &update.space_ref);
     apply_patch(&mut merged.space_cwd, &update.space_cwd);
+    apply_patch(&mut merged.external_url, &update.external_url);
     merged
 }
 

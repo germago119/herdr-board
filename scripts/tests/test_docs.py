@@ -144,7 +144,7 @@ class DocumentationContractTests(unittest.TestCase):
         last_number = scenario_paths()[-1].name[:2]
         for surface, expected in (
             ("Board socket", "v1;"),
-            ("SQLite", "schema v15"),
+            ("SQLite", "schema v16"),
             ("Herdr client", "0.9.0 / socket protocol 22"),
             ("Herdr integrations", "Pi v8; Claude v7"),
             ("Runtime launch", "daemon-owned"),

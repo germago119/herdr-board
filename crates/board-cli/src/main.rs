@@ -20,6 +20,7 @@ use commands::board::cmd_board;
 use commands::card::{cmd_card, cmd_move};
 use commands::column::cmd_column;
 use commands::discovery::{cmd_harness, cmd_session, cmd_space, cmd_status};
+use commands::jira::cmd_jira;
 use commands::project::cmd_project;
 use commands::run::{cmd_card_run, cmd_comment, cmd_pane_exited};
 use commands::template::cmd_template;
@@ -109,6 +110,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         Cmd::Board { sub } => cmd_board(sub, &mut ctx),
         Cmd::Project { sub } => cmd_project(sub, &mut ctx),
         Cmd::Template { sub } => cmd_template(sub, &mut ctx),
+        Cmd::Jira { sub } => cmd_jira(sub, &mut ctx),
         Cmd::Card { sub } => cmd_card(sub, &mut ctx),
         Cmd::Column { sub } => cmd_column(sub, &mut ctx),
         Cmd::Harness { sub } => cmd_harness(sub, &mut ctx),

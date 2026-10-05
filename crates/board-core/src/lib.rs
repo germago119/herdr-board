@@ -9,6 +9,8 @@
 //! - [`prompt`]: prompt assembly and effective-settings resolution.
 //! - [`harness`]: argv/env builders for the built-in Pi/Claude/Codex/OpenCode
 //!   Antigravity and config harnesses.
+//! - [`jira`]: bounded, hermetic `jira` CLI adapter (issue list/move/view) used
+//!   by the Jira importer and card-move status sync.
 //! - [`config`]: `~/.config/herdr-board/config.toml` loader.
 //! - [`paths`]: db/socket/log/config path resolution.
 //! - [`client`]: blocking NDJSON `BoardClient` (+ `FakeBoardClient` behind a feature).
@@ -22,6 +24,7 @@ pub mod config;
 pub mod db;
 pub mod engine;
 pub mod harness;
+pub mod jira;
 pub mod labels;
 pub mod launch;
 pub mod model;
@@ -67,6 +70,20 @@ pub enum Error {
     #[error("herdr unavailable: {0}")]
     HerdrUnavailable(String),
 
+    /// The `jira` CLI is unavailable, misconfigured, or returned an
+    /// unclassifiable failure (protocol code 6). Distinct from
+    /// [`Error::HerdrUnavailable`] so clients can tell the two integrations
+    /// apart; not one of the CLI's dedicated `1..=5` exit statuses (exits 70).
+    #[error("jira unavailable: {0}")]
+    JiraUnavailable(String),
+
+    /// A Jira transition succeeded remotely but the local database write that
+    /// was supposed to follow it failed (protocol code 7). The card's Jira
+    /// status and its local column now disagree; the caller must re-run the
+    /// move (or reconcile by hand) rather than assume nothing happened.
+    #[error("reconciliation required: {0}")]
+    ReconciliationRequired(String),
+
     #[error(transparent)]
     Validation(#[from] ValidationError),
 }
@@ -81,6 +98,8 @@ impl Error {
             Error::Validation(v) => v.code(),
             Error::HerdrUnavailable(_) => 4,
             Error::Sqlite(_) | Error::Json(_) | Error::Io(_) | Error::Config(_) => 5,
+            Error::JiraUnavailable(_) => 6,
+            Error::ReconciliationRequired(_) => 7,
         }
     }
 }

@@ -1436,3 +1436,109 @@ fn drag_card_dropped_on_its_own_row_is_noop() {
         "dropping on the origin slot must not reorder"
     );
 }
+
+/// A cross-column mouse drag reaches `card.move` through the exact same
+/// `Effect::CardMove` path as `drag_card_to_other_column_produces_move`
+/// (`crates/board-tui/tests/update/scope.rs`), so a daemon-side rejection
+/// (here: the source board is archived, a real `card.move` guard) must surface
+/// as a visible error toast and must not move the card — no new mouse
+/// mechanics are added by Jira status sync, only a new failure mode reachable
+/// through the pre-existing drag path.
+///
+/// This does not exercise Jira itself (the fake client never talks to `jira`);
+/// it proves the drag → `card.move` → daemon-error → toast/no-op-rollback
+/// chain that Jira status sync (`card_move`'s transition-before-commit) relies
+/// on to fail closed and stay visible in the TUI.
+#[test]
+fn drag_card_to_other_column_when_board_archived_toasts_and_does_not_move() {
+    use board_core::client::FakeBoardClient;
+    use board_core::protocol::{CardCreateParams, ColumnCreateParams, Trigger};
+    use board_tui::view::board_layout;
+    use crossterm::event::MouseButton;
+
+    // A minimal, purpose-built board (not `demo_client()`, whose seeded
+    // "Plan" card carries an open run that would itself block archiving) —
+    // two idle-only manual columns so `set_board_archived` succeeds cleanly
+    // and the only guard exercised here is `card.move`'s own.
+    let mut client = FakeBoardClient::new().unwrap();
+    let board_id = client.board_get().unwrap().board.id;
+    let plan_id = client
+        .column_create(&ColumnCreateParams {
+            name: "Plan".into(),
+            trigger: Some(Trigger::Manual),
+            ..Default::default()
+        })
+        .unwrap()
+        .id;
+    client
+        .column_create(&ColumnCreateParams {
+            name: "Execute".into(),
+            trigger: Some(Trigger::Manual),
+            ..Default::default()
+        })
+        .unwrap();
+    client
+        .card_create(&CardCreateParams {
+            title: "Add retry to scraper".into(),
+            column_id: Some(plan_id),
+            ..Default::default()
+        })
+        .unwrap();
+    client.db().set_board_archived(board_id, true).unwrap();
+
+    let mut d = driver_with_editor(client, EDITED);
+    d.app.last_area = Rect::new(0, 0, REGULAR.0, REGULAR.1);
+    render_at(&mut d, REGULAR.0, REGULAR.1);
+    let layout = board_layout(&d.app, Rect::new(0, 0, REGULAR.0, REGULAR.1));
+    let plan = layout
+        .cols
+        .iter()
+        .find(|c| c.idx == 1)
+        .expect("Plan column visible at 80x24");
+    let (c0, r0) = plan.cards[0];
+    let plan_id = d.app.col_id_at(1).unwrap();
+    let execute = layout
+        .cols
+        .iter()
+        .find(|c| c.idx == 2)
+        .expect("Execute column visible at 80x24");
+    let dest_x = execute.rect.x.saturating_add(1);
+    let dest_y = execute.rect.y.saturating_add(1);
+    let dragged = d.app.cards_of(plan_id)[c0].id;
+    let before: Vec<i64> = d.app.cards_of(plan_id).iter().map(|c| c.id).collect();
+
+    d.handle(left_down(r0.x.saturating_add(1), r0.y.saturating_add(1)));
+    assert!(d.app.drag.is_some(), "drag began on mouse down");
+    d.handle(mouse(
+        MouseEventKind::Drag(MouseButton::Left),
+        dest_x,
+        dest_y,
+    ));
+    d.handle(mouse(MouseEventKind::Up(MouseButton::Left), dest_x, dest_y));
+    assert!(d.app.drag.is_none(), "drag cleared on mouse up");
+
+    let toast = d
+        .app
+        .toast
+        .as_ref()
+        .expect("the daemon's archived-board rejection must surface as a toast");
+    assert!(toast.is_error, "an archived-board rejection is an error");
+    assert!(
+        toast.text.contains("archived board must be restored first"),
+        "toast should name the real daemon guard: {}",
+        toast.text
+    );
+
+    // No optimistic mutation happens before the RPC round-trip (`finish_drag`
+    // only ever emits an `Effect`), and the failed `card.move` short-circuits
+    // before any refetch, so Plan's cards must be exactly as they were.
+    let after: Vec<i64> = d.app.cards_of(plan_id).iter().map(|c| c.id).collect();
+    assert_eq!(
+        before, after,
+        "a rejected cross-column move must not change local board state"
+    );
+    assert!(
+        d.app.cards_of(plan_id).iter().any(|c| c.id == dragged),
+        "the dragged card must remain in its original column"
+    );
+}

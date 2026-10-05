@@ -83,6 +83,7 @@ async fn async_main(db_path: PathBuf, socket_path: PathBuf) -> anyhow::Result<()
     // daemon settings' legacy parser turn malformed TOML into defaults.
     let root = RootConfig::load()?;
     let settings = DaemonSettings::from_root(&root, &ProcessEnv)?;
+    let jira = root.jira.clone();
     let mut config: Config = root.board;
     // Resolve the Pi agent dir for live model discovery unless the user pinned
     // it in config.toml. Tests construct Config directly (pi_agent_dir stays
@@ -147,6 +148,7 @@ async fn async_main(db_path: PathBuf, socket_path: PathBuf) -> anyhow::Result<()
         store,
         config,
         settings,
+        jira,
         db_path,
         socket_path.clone(),
         spawner,

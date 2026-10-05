@@ -98,6 +98,9 @@ pub(super) fn row_to_card(row: &Row) -> SqliteResult<Card> {
         created_at: row.get("created_at")?,
         updated_at: row.get("updated_at")?,
         archived_at: row.get("archived_at")?,
+        external_source: row.get("external_source")?,
+        external_key: row.get("external_key")?,
+        external_url: row.get("external_url")?,
         // Stamped daemon-side with resolved display labels at serve time.
         labels: CardLabels::default(),
     })

@@ -32,7 +32,7 @@ checklist. Host-side execution is an explicit, documented exception only.
 Ownership is strict: edit your crate(s) + append to root `[workspace.dependencies]`. Semantics
 source of truth: `docs/protocol.md` + `docs/design.md`. Docs live in `docs/` (index: `docs/README.md`);
 `schema.sql` is the fresh-schema source of truth and `board-core::db` owns upgrades. Final compatibility
-schema v15
+schema v16
 live catalog is `e2e/README.md` (scenarios 01–40); `e2e/test-harness.sh` is the provider-free static
 safety gate.
 
@@ -42,7 +42,7 @@ The gate list has one maintained copy: **[`docs/README.md` → Test gates](docs/
 (mirrored by `.github/workflows/ci.yml`; `scripts/tests/test_docs.py` fails if the two drift).
 
 - The Python tier is a CI gate too (`ci.yml`'s `Python tests` step) and is easy to forget:
-  `scripts/tests/test_docs.py` pins the version matrix (schema v15, protocol 22, Herdr 0.9.0)
+  `scripts/tests/test_docs.py` pins the version matrix (schema v16, protocol 22, Herdr 0.9.0)
   and the exact `e2e/NN-*.sh` catalog, so adding a scenario or bumping the schema fails here
   until the docs and that test are updated together.
 

@@ -60,6 +60,7 @@ pub(crate) struct DaemonBuilder {
     db: Option<Db>,
     config: Config,
     settings: DaemonSettings,
+    jira: board_core::config::JiraConfig,
     spawner: Arc<dyn Spawner>,
     session_registry: Option<SessionRegistry>,
     herdr: Option<HerdrClient>,
@@ -74,6 +75,7 @@ pub(crate) fn daemon() -> DaemonBuilder {
         db: None,
         config: Config::default(),
         settings: DaemonSettings::default(),
+        jira: board_core::config::JiraConfig::default(),
         spawner: Arc::new(LocalSpawner::new()),
         session_registry: None,
         herdr: None,
@@ -93,6 +95,11 @@ impl DaemonBuilder {
 
     pub(crate) fn config(mut self, config: Config) -> Self {
         self.config = config;
+        self
+    }
+
+    pub(crate) fn jira(mut self, jira: board_core::config::JiraConfig) -> Self {
+        self.jira = jira;
         self
     }
 
@@ -147,6 +154,7 @@ impl DaemonBuilder {
             Store::new(db),
             self.config,
             self.settings,
+            self.jira,
             self.db_path,
             self.socket_path,
             self.spawner,

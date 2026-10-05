@@ -63,3 +63,14 @@ pub(super) fn duplicate_column(name: &str) -> String {
 pub(super) fn duplicate_board(name: &str) -> String {
     format!("board {name:?} already exists in this project; pick another name")
 }
+
+/// `cards(board_id, external_source, external_key)` is unique (partial index,
+/// only when both are set). Reached only by a caller manually reusing an
+/// already-linked external identity — the Jira importer itself always looks
+/// up the existing card first and updates it instead of inserting again.
+pub(super) fn duplicate_external(source: &str, key: &str) -> String {
+    format!(
+        "a card on this board is already linked to {source}:{key}; \
+         update that card instead of creating another"
+    )
+}
