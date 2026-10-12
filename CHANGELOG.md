@@ -10,6 +10,7 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- [#000](https://github.com/nelsonPires5/herdr-board/pull/000) feat: Import Jira issues as linked cards and sync issue status when cards move.
 - [#132](https://github.com/nelsonPires5/herdr-board/pull/132) feat: Offer only Herdr-installed harnesses in the card and column pickers, defaulting new cards to an installed harness (issue #111).
 
 ### Changed

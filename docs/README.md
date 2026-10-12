@@ -7,7 +7,7 @@ The reference detail behind the [root README](../README.md). Start here to find 
 | Surface | Final version / owner | Canonical source |
 |---|---|---|
 | Board socket | v1; `board-core::protocol` (additive `active_runs`, error `kind`/`details`) | [protocol.md](protocol.md) |
-| SQLite | schema v15; `schema.sql` + `board-core::db` migrations | [design.md](design.md) |
+| SQLite | schema v16; `schema.sql` + `board-core::db` migrations | [design.md](design.md) |
 | CLI | canonical nested `board board/card/comment/run/column` taxonomy; `board-cli` wiring | [README CLI reference](../README.md#cli-reference), [skill](../skill/SKILL.md) |
 | Herdr client | 0.9.0 / socket protocol 22; `board-herdr` typed calls | [herdr.md](herdr.md) |
 | Herdr integrations | Pi v8; Claude v7; Antigravity CLI v1 for the agy conversation capture (installed and updated by the user) | [herdr.md](herdr.md), [install.md](install.md) |
@@ -36,7 +36,7 @@ isolation is an agent prompt concern, not a board space primitive.
 
 The [`schema.sql`](../schema.sql) at the repo root is the fresh SQLite schema; migration behavior
 and upgrade tests live in `board-core::db`. Before handoff, check that docs still point to existing
-schema v15
+schema v16
 the scenario catalog lists every `e2e/NN-*.sh` from 01 through 40.
 
 ## Test gates (single source)

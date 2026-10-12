@@ -127,6 +127,20 @@ pub struct Card {
     pub updated_at: String,
     /// When the card was archived; `None` means it is active on the board.
     pub archived_at: Option<String>,
+    /// Generic external-tracker identity (e.g. `jira`). `None` = not linked.
+    /// `(board_id, external_source, external_key)` is unique per board, so a
+    /// given external issue can be imported into at most one card. Missing on
+    /// pre-v16 wire payloads.
+    #[serde(default)]
+    pub external_source: Option<String>,
+    /// The external issue's own key (e.g. `PROJ-123`). `None` unless
+    /// `external_source` is also set. Missing on pre-v16 wire payloads.
+    #[serde(default)]
+    pub external_key: Option<String>,
+    /// Best-effort browse URL for the external issue. Missing on pre-v16
+    /// wire payloads.
+    #[serde(default)]
+    pub external_url: Option<String>,
     /// Read-only display labels stamped by the daemon (ready strings; the
     /// clients render them verbatim). Populated on read; never round-tripped.
     /// Missing on older serialized payloads, so default to empty.

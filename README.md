@@ -2,7 +2,7 @@
 
 ![Rust](https://img.shields.io/badge/rust-edition%202021-orange.svg)
 ![herdr 0.9.0+](https://img.shields.io/badge/herdr-0.9.0%2B-8a2be2)
-![board protocol v1 · schema v15](https://img.shields.io/badge/board-protocol%20v1%20%C2%B7%20schema%20v15-blue.svg)
+![board protocol v1 · schema v16](https://img.shields.io/badge/board-protocol%20v1%20%C2%B7%20schema%20v16-blue.svg)
 ![platforms: linux, macOS](https://img.shields.io/badge/platforms-linux%2C%20macOS-informational)
 
 **Turn a kanban card into a real AI coding agent running in a visible Herdr pane.** Cards hold
@@ -141,7 +141,7 @@ prefix is `ctrl+a`, it is `Ctrl+A Shift+K`). Do not reuse `prefix+k` — it is H
   Rust toolchain with `cargo`; Linux and macOS are supported. The daemon rejects any other socket
   protocol before workspace discovery and pane launch; a different Herdr version is warned about,
   not rejected, as long as the socket speaks protocol 22.
-- Board protocol **v1**, SQLite schema **v15** (`schema.sql`; upgrades via `board-core::db`).
+- Board protocol **v1**, SQLite schema **v16** (`schema.sql`; upgrades via `board-core::db`).
 - The installer copies the `board` CLI to `~/.local/bin` — make sure that directory is on your
   `PATH` (`HERDR_BOARD_CLI_INSTALL_DIR` overrides it before installing).
 - Without the harness integration the board still dispatches and accepts `board done`, but runs in
@@ -156,6 +156,44 @@ prefix is `ctrl+a`, it is `Ctrl+A Shift+K`). Do not reuse `prefix+k` — it is H
   [`docs/install.md`](docs/install.md).
 
 </details>
+
+## Jira integration (this fork)
+
+This fork adds `board jira import` (import Jira issues as cards) and Jira status sync when a linked
+card moves between the `Backlog` / `In Progress` / `Done` columns. It shells out to
+[jira-cli](https://github.com/ankitpokhrel/jira-cli); herdr-board never sees your Jira token.
+
+**Prerequisites**
+
+- Rust toolchain (`cargo`), Git, and herdr >= 0.9.0 (socket protocol 22).
+- `jira-cli` installed and configured with your own personal access token and Jira server
+  (`jira init`; the token is exported as `JIRA_API_TOKEN`). Verify with `jira me`.
+
+**Install**
+
+```sh
+herdr plugin install germago119/herdr-board --ref roger/jira-integration
+# or, from a clone:
+git clone --branch roger/jira-integration https://github.com/germago119/herdr-board
+cd herdr-board && herdr plugin link .
+```
+
+**Configure** — edit `~/.config/herdr-board/config.toml` (see [`config.example.toml`](config.example.toml);
+key reference in [`docs/configuration.md`](docs/configuration.md#jira-integration-opt-in)):
+
+```toml
+[jira]
+enabled = true
+executable = "/usr/local/bin/jira"
+project = "PROJECTKEY"
+```
+
+**Use**
+
+```sh
+board jira import --help
+board jira import --jira-project PROJECTKEY --board-name "My Jira board"
+```
 
 ## Developing in the Docker sandbox
 

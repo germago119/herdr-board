@@ -1,0 +1,21 @@
+# Example herdr-board config for the Jira integration (placeholders only).
+# Copy to ~/.config/herdr-board/config.toml (merge into your existing file if any).
+# herdr-board never stores Jira credentials or the server URL: both live in
+# jira-cli's own config (~/.config/.jira/.config.yml, created by `jira init`).
+
+[jira]
+enabled = true
+executable = "/usr/local/bin/jira"   # or just "jira" to resolve on $PATH
+project = "PROJECTKEY"               # Jira project key (-p)
+jql = "assignee = currentUser() AND sprint in openSprints()"
+page_size = 100                      # jira-cli --paginate max
+board = "Jira: PROJECTKEY"           # optional local board name
+
+[jira.status_map]                    # lowercased Jira status -> backlog|in_progress|done
+"done" = "done"
+"in progress" = "in_progress"
+
+[jira.transitions]                   # category -> `jira issue move KEY <action>`
+backlog = "Backlog"
+in_progress = "In Progress"
+done = "Done"

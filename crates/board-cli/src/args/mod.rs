@@ -13,6 +13,7 @@ mod card;
 mod column;
 mod common;
 mod discovery;
+mod jira;
 mod project;
 mod run;
 
@@ -21,6 +22,7 @@ pub(crate) use card::{CardCmd, CommentCmd};
 pub(crate) use column::ColumnCmd;
 pub(crate) use common::ConfirmArgs;
 pub(crate) use discovery::{HarnessCmd, SessionCmd, SpaceCmd};
+pub(crate) use jira::JiraCmd;
 pub(crate) use project::ProjectCmd;
 pub(crate) use run::RunCmd;
 
@@ -76,6 +78,12 @@ pub(crate) enum Cmd {
     Template {
         #[command(subcommand)]
         sub: TemplateCmd,
+    },
+    /// Jira integration (import; status sync happens automatically via
+    /// `board move`).
+    Jira {
+        #[command(subcommand)]
+        sub: JiraCmd,
     },
     /// Card operations.
     Card {

@@ -16,6 +16,7 @@ mod columns;
 mod comments;
 mod discovery;
 mod errors;
+mod jira;
 mod panes;
 mod projects;
 mod runs;
@@ -117,6 +118,7 @@ routes!(d, params, {
     "space.list" => discovery::space_list(d, from(params)?),
     "session.list" => discovery::session_list(d),
     "pane.set_title" => panes::pane_set_title(from(params)?),
+    "jira.import" => jira::jira_import(d, from(params)?),
 });
 
 fn from<T: serde::de::DeserializeOwned>(v: Value) -> Result<T> {

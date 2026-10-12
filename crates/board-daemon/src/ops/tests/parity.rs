@@ -28,11 +28,16 @@ use crate::ops::ROUTED_METHODS;
 ///   DB-only fake with no dispatcher cannot honestly model.
 /// - `run.pane_exited` — the internal configured-harness wrapper callback; no
 ///   client, and therefore no fake, ever sends it.
+/// - `jira.import` — shells out to the real `jira` CLI; a DB-only fake cannot
+///   honestly answer it, and `board-tui` never calls it directly (its TUI
+///   surface is limited to `card.move`'s existing effect, which the fake
+///   already models — Jira status sync itself is daemon-only).
 const KNOWN_UNIMPLEMENTED: &[&str] = &[
     "daemon.status",
     "daemon.stop",
     "harness.capabilities",
     "harness.list",
+    "jira.import",
     "run.cancel",
     "run.pane_exited",
     "run.retry",

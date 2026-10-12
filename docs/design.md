@@ -156,7 +156,7 @@ anchor unchanged: `pane run` exits close their child, so the anchor is what the 
 from. Old live anchors from earlier releases converge on the next successful managed launch;
 old durable child evidence remains valid tab proof.
 Herdr labels are not unique, so neither tab nor anchor ownership is inferred from one. The current
-schema v15 retains the exact anchor pane id introduced by v12 with each promoted run; after restart,
+schema v16 retains the exact anchor pane id introduced by v12 with each promoted run; after restart,
 the daemon reconstructs the exact tab and anchor only from scoped durable pane identities in the same
 session and workspace.
 A renamed anchor remains owned by identity. If that exact anchor was closed, it is recreated only by
@@ -207,8 +207,8 @@ runs(id, card_id, column_id, harness, argv_json, prompt_snapshot,
      result_summary, log_path)
 ```
 
-Schema is versioned via `PRAGMA user_version` (current = **v15**). A fresh DB is built straight from
-`schema.sql` and stamped v15. Existing v1→v4 migrations retain their space/session, archive, and Pi
+Schema is versioned via `PRAGMA user_version` (current = **v16**). A fresh DB is built straight from
+`schema.sql` and stamped v16. Existing v1→v4 migrations retain their space/session, archive, and Pi
 effort behavior. v5 adds unique non-null `boards.scope_path`, preserves board `id=1` plus every
 related row as `Global`, and leaves existing card harnesses unchanged. v6 rebuilds `cards` to admit
 the `awaiting`/`done` statuses and adds `cards.awaiting_reason` (NULL outside `awaiting`). v7 adds
@@ -240,9 +240,14 @@ execute their persisted all-in-one argv unchanged, while pre-v7 configured rows 
 historical spawn-time current-column reconstruction. `Run` deserialization defaults an omitted field
 to NULL, but serialization always omits `system_prompt_snapshot` and its contents from boardd wire
 responses. `launch_spec_json` is likewise internal and omitted in full from boardd wire responses.
+v15 adds nullable `archived_at` to `projects` and `boards` for the archive/restore workflow. v16
+adds nullable `cards.external_source`/`external_key`/`external_url` plus a partial unique index on
+`(board_id, external_source, external_key)` (only enforced when both are set) — the durable identity
+`jira import` links a card by and `card.move` reads to decide whether a cross-column move must also
+transition the linked Jira issue; see the Jira integration section below.
 
 Source ownership is explicit: `schema.sql` is the fresh schema source, `board-core::db` owns ordered
-upgrades through v15, and `board-core::protocol` owns the v1 wire DTOs and additive compatibility
+upgrades through v16, and `board-core::protocol` owns the v1 wire DTOs and additive compatibility
 rules. The CLI and TUI use typed `BoardClient` wrappers; only boardd reads or writes SQLite. New
 v1 fields such as `BoardSnapshot.active_runs` and RPC error `kind`/`details` are additive, so older
 clients can continue decoding the existing fields.
@@ -415,6 +420,61 @@ Duplication is deliberately **not** a `card.create`: it never runs `decide_entry
 auto column stays idle with no run row — the dispatcher only ever picks up queued runs, so the
 copy waits for an explicit move/run like any idle card. The daemon emits the normal `CardCreated`
 event for the copy, and the TUI shows a `card duplicated as #N` toast after the board refetch.
+
+### Jira integration
+
+A card can be **linked** to an external tracker issue via three generic (not Jira-specific) columns
+added in schema v16: `external_source`, `external_key`, `external_url` (all nullable `TEXT`).
+`(board_id, external_source, external_key)` is unique via a partial index — enforced only when both
+are set — so an importer can always look the card up by identity before deciding to create or
+update, with no fragile description markers. Only `jira` is used as `external_source` today; the
+fields are deliberately generic so a future tracker could reuse the same shape.
+
+`herdr-board` never reads or copies Jira credentials: `board_core::jira` always shells out to the
+user's own already-authenticated `jira` CLI (jira-cli v1.7.0), exactly like `agy_catalog` shells out
+to `agy` — argv arrays only (never a shell string), `stdin` null, both `stdout`/`stderr` captured
+through bounded reader threads with a wall-clock deadline (`CLI_TIMEOUT` = 30s) and a total output
+cap, so a hung or pathological `jira` cannot block the daemon or exhaust memory.
+
+The feature is opt-in: `RootConfig.jira` (`[jira]` in `config.toml`) defaults to `enabled = false`,
+which preserves all non-Jira behavior and tests untouched. When enabled it configures `executable`
+(default `jira`), a required `project` (or an import-time `--jira-project` override), `jql`,
+`page_size` (clamped to jira-cli's documented 100-per-page maximum), an optional `board` name, and
+two independent mapping tables: `status_map` (a Jira status *name*, lowercased, onto a canonical
+category — read direction, used only by import) and `transitions` (a canonical category onto a Jira
+transition *action* name — write direction, used only by move-sync; transition action names are not
+guaranteed to equal the destination status name). The three canonical categories are exactly
+`Backlog` / `In Progress` / `Done`; any status absent from `status_map` defaults to `Backlog`. The
+column-name-to-category match itself (used by move-sync to decide whether a destination column is
+Jira-tracked at all) is a fixed case-insensitive match against those same three names — not a config
+knob, since `jira import` is what names the columns in the first place.
+
+`board jira import` (`jira.import`) creates or selects a local board (`--board-name`, else
+`[jira].board`, else `Jira: <project>`), ensures its three manual columns exist (created if missing,
+matched case-insensitively if already present under different casing), fetches every issue matching
+the configured/overridden JQL (paginating in pages of at most 100 until a short page ends the list,
+with a hard 10,000-issue safety cap against a runaway JQL), and for each issue either creates a new
+linked card or updates an existing one's title/description/column when they changed — looked up by
+`(board, "jira", issue.key)`, never duplicated. A valid empty result (jira-cli's documented exit 1
+with `"No result found for given query in project ..."`) is zero issues, not an error; every other
+nonzero exit is `Error::JiraUnavailable` (protocol error code 6). Import never dispatches an agent
+and never wakes the scheduler — the new/updated cards are exactly as idle as any manually created
+card.
+
+`card.move` synchronizes a linked card's Jira status when (and only when) the move actually crosses
+columns and the destination is one of the three Jira-tracked columns; a same-column reorder never
+contacts Jira. The daemon resolves the destination category's configured transition action, invokes
+`jira -p PROJECT issue move KEY STATE`, and then verifies via `jira -p PROJECT issue view KEY --raw`
+that `.fields.status.name` now maps onto the intended category (since a transition's action name is
+not guaranteed to equal the resulting status name) — all **before** the local column write commits.
+Any failure in that sequence (missing project/transition config, CLI error, or a verify mismatch)
+aborts with an error and leaves the card's local column completely unchanged. If the remote
+transition and verify both succeed but the local write then unexpectedly fails, the error is
+`Error::ReconciliationRequired` (protocol error code 7): the board and Jira are now out of sync and
+a human must reconcile them, rather than the daemon silently retrying or masking the drift. This
+applies identically whether the move was a keyboard `m`/CLI `board move` or a mouse drag — both
+paths produce the same `card.move` request; the TUI adds no new mouse mechanics for Jira sync, and
+a rejected move surfaces as the ordinary error toast with no optimistic local mutation to roll back.
 
 ### Scope selection
 

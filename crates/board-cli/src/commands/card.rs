@@ -54,6 +54,7 @@ pub(crate) fn cmd_card(sub: CardCmd, ctx: &mut Ctx) -> Result<()> {
                 space_ref,
                 space_cwd,
                 position: None,
+                ..Default::default()
             };
             let card = ctx.client()?.card_create(&p)?;
             emit_line(
@@ -105,6 +106,7 @@ pub(crate) fn cmd_card(sub: CardCmd, ctx: &mut Ctx) -> Result<()> {
                 space_kind: space_kind.as_deref().map(parse_space_kind).transpose()?,
                 space_ref: Patch::from_flags(clear_space_ref, space_ref),
                 space_cwd: Patch::from_flags(clear_space_cwd, space_cwd),
+                ..Default::default()
             };
             let card = ctx.client()?.card_update(&p)?;
             emit_line(&card, json, format!("Updated card #{}", card.id))

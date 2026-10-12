@@ -5,8 +5,44 @@ use board_core::engine::{
     decide_entry, merge_card_update, validate_card_archive, validate_card_edit,
     validate_card_settings, validate_card_values, validate_effective_settings,
 };
+use board_core::harness::DEFAULT_HARNESS;
+use board_core::jira as jira_cli;
 use board_core::labels::card_labels;
-use board_core::model::Card;
+use board_core::model::{Card, Column};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct JiraMovePlan {
+    card: Card,
+    target: Column,
+    key: String,
+    category: jira_cli::JiraCategory,
+    transition: String,
+}
+
+fn jira_move_plan(d: &Daemon, db: &Db, p: &CardMoveParams) -> Result<Option<JiraMovePlan>> {
+    if !d.jira.enabled {
+        return Ok(None);
+    }
+    let card = db.require_card(p.id)?;
+    if card.column_id == p.column_id || card.external_source.as_deref() != Some("jira") {
+        return Ok(None);
+    }
+    let Some(key) = card.external_key.clone() else {
+        return Ok(None);
+    };
+    let target = db.require_column(p.column_id)?;
+    let Some(category) = jira_cli::category_for_column_name(&target.name) else {
+        return Ok(None);
+    };
+    let transition = jira_cli::transition_for_category(&d.jira, category)?;
+    Ok(Some(JiraMovePlan {
+        card,
+        target,
+        key,
+        category,
+        transition,
+    }))
+}
 
 /// Stamp the daemon-owned display labels onto a card (ready strings; the
 /// clients render them verbatim). The session label resolves an unset session
@@ -46,7 +82,7 @@ fn pending_create_card(db: &Db, p: &CardCreateParams) -> Result<Card> {
         harness: p
             .harness
             .clone()
-            .unwrap_or_else(|| board_core::harness::DEFAULT_HARNESS.to_string()),
+            .unwrap_or_else(|| DEFAULT_HARNESS.to_string()),
         model: p.model.clone(),
         effort: p.effort,
         permission_mode: p.permission_mode.clone(),
@@ -60,6 +96,9 @@ fn pending_create_card(db: &Db, p: &CardCreateParams) -> Result<Card> {
         created_at: String::new(),
         updated_at: String::new(),
         archived_at: None,
+        external_source: p.external_source.clone(),
+        external_key: p.external_key.clone(),
+        external_url: p.external_url.clone(),
         // Stamped daemon-side with resolved display labels at serve time.
         labels: board_core::protocol::CardLabels::default(),
     })
@@ -262,10 +301,54 @@ pub(super) fn card_archive(d: &Arc<Daemon>, p: CardArchiveParams) -> Result<Valu
 }
 
 pub(super) fn card_move(d: &Arc<Daemon>, p: CardMoveParams) -> Result<Value> {
+    // Discover whether this request may need remote synchronization without
+    // retaining a store lock. If it does, serialize Jira transitions, refresh
+    // the plan after acquiring that narrow lock, and perform all subprocess
+    // I/O before entering the scheduler/store critical section.
+    let initial_jira_plan = {
+        let db = d.store.lock();
+        jira_move_plan(d, &db, &p)?
+    };
+    let _jira_guard = initial_jira_plan
+        .as_ref()
+        .map(|_| d.jira_sync.lock().unwrap());
+    let jira_sync = if _jira_guard.is_some() {
+        let plan = {
+            let db = d.store.lock();
+            jira_move_plan(d, &db, &p)?
+        };
+        if let Some(plan) = &plan {
+            jira_cli::transition_issue(&d.jira, &plan.key, &plan.transition)?;
+            jira_cli::verify_status(&d.jira, &plan.key, plan.category)?;
+        }
+        plan
+    } else {
+        None
+    };
+
     let (mut card, target, source_board_id, source_column_id, enqueue) = {
         let mut _sched = d.sched.lock().unwrap();
         let db = d.store.lock();
         let current = db.require_card(p.id)?;
+        let current_jira_plan = jira_move_plan(d, &db, &p)?;
+        match (&jira_sync, &current_jira_plan) {
+            (Some(expected), Some(actual))
+                if expected.card == actual.card && expected.target == actual.target => {}
+            (Some(expected), _) => {
+                return Err(Error::ReconciliationRequired(format!(
+                    "Jira issue {} was transitioned to {:?}, but the card or destination changed \
+                     before the local move could commit; the board and Jira may be out of sync — \
+                     retry the move or reconcile them by hand",
+                    expected.key, expected.category
+                )));
+            }
+            (None, Some(_)) => {
+                return Err(Error::InvalidState(
+                    "card or destination changed while preparing the move; retry the move".into(),
+                ));
+            }
+            (None, None) => {}
+        }
         if current.archived_at.is_some() {
             return Err(Error::InvalidState(
                 "archived card must be restored before moving".into(),
@@ -375,36 +458,58 @@ pub(super) fn card_move(d: &Arc<Daemon>, p: CardMoveParams) -> Result<Value> {
         }
 
         let entry = decide_entry(&target, current.status, false);
-        let card = if entry.enqueue {
-            let prepared = prepare_enqueue_values(d, &db, &current, p.column_id, false)?;
-            let (card, _run) = if cross {
-                db.transfer_card_and_enqueue_uow(
+        let move_result: Result<Card> = (|| {
+            let card = if entry.enqueue {
+                let prepared = prepare_enqueue_values(d, &db, &current, p.column_id, false)?;
+                let (card, _run) = if cross {
+                    db.transfer_card_and_enqueue_uow(
+                        p.id,
+                        p.board_id.ok_or_else(|| {
+                            Error::InvalidState("cross-board move has no destination board".into())
+                        })?,
+                        p.column_id,
+                        p.position,
+                        &prepared.borrowed(),
+                    )?
+                } else {
+                    db.move_card_and_enqueue_uow(
+                        p.id,
+                        p.column_id,
+                        p.position,
+                        &prepared.borrowed(),
+                    )?
+                };
+                // This scheduler-only mutation follows the DB commit and is
+                // not observable when the durable move/enqueue UoW fails.
+                _sched.chain_hops.remove(&card.id);
+                card
+            } else if cross {
+                db.transfer_card(
                     p.id,
                     p.board_id.ok_or_else(|| {
                         Error::InvalidState("cross-board move has no destination board".into())
                     })?,
                     p.column_id,
                     p.position,
-                    &prepared.borrowed(),
                 )?
             } else {
-                db.move_card_and_enqueue_uow(p.id, p.column_id, p.position, &prepared.borrowed())?
+                db.move_card(p.id, p.column_id, p.position)?
             };
-            // This scheduler-only mutation follows the DB commit and is not
-            // observable when the durable move/enqueue UoW fails.
-            _sched.chain_hops.remove(&card.id);
-            card
-        } else if cross {
-            db.transfer_card(
-                p.id,
-                p.board_id.ok_or_else(|| {
-                    Error::InvalidState("cross-board move has no destination board".into())
-                })?,
-                p.column_id,
-                p.position,
-            )?
-        } else {
-            db.move_card(p.id, p.column_id, p.position)?
+            Ok(card)
+        })();
+        let card = match move_result {
+            Ok(card) => card,
+            Err(e) => {
+                if let Some(sync) = &jira_sync {
+                    return Err(Error::ReconciliationRequired(format!(
+                        "Jira issue {} was transitioned to {:?} but the local move \
+                         then failed: {e}; the board and Jira are now out of sync — retry the \
+                         move, or move the card back / re-transition Jira by hand",
+                        sync.key, sync.category
+                    )));
+                }
+                return Err(e);
+            }
         };
         (
             card,

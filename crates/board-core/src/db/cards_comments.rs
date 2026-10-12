@@ -1,7 +1,7 @@
 use rusqlite::{params, OptionalExtension};
 
 use super::rows;
-use super::{Db, EnqueueRun, BOARD_ID};
+use super::{constraints, Db, EnqueueRun, BOARD_ID};
 use crate::model::{Card, Comment, CommentHistory, CommentRecord};
 use crate::protocol::{
     AwaitingReason, CardCreateParams, CardDetail, CardStatus, CardUpdateParams, CardVisibility,
@@ -104,6 +104,24 @@ impl Db {
             .ok_or_else(|| Error::NotFound(format!("card {id}")))
     }
 
+    /// Find the card on `board_id` linked to `(source, key)`, e.g. a Jira
+    /// issue's own key — the idempotency lookup an importer runs before
+    /// deciding whether to create a card or update an existing one.
+    /// `(board_id, external_source, external_key)` is unique when both are
+    /// set (schema v16 partial index), so this returns at most one row.
+    pub fn find_card_by_external(
+        &self,
+        board_id: i64,
+        source: &str,
+        key: &str,
+    ) -> Result<Option<Card>> {
+        rows::opt(self.conn.query_row(
+            "SELECT * FROM cards WHERE board_id=?1 AND external_source=?2 AND external_key=?3",
+            params![board_id, source, key],
+            rows::row_to_card,
+        ))
+    }
+
     pub fn create_card(&self, p: &CardCreateParams) -> Result<Card> {
         let board_id = p.board_id.unwrap_or(BOARD_ID);
         self.get_board(board_id)?;
@@ -130,26 +148,36 @@ impl Db {
             .unwrap_or_else(|| crate::harness::DEFAULT_HARNESS.to_string());
         let space_kind = p.space_kind.unwrap_or(SpaceKind::Workspace).as_str();
         let effort = p.effort.map(|e| e.as_str());
-        self.conn.execute(
-            "INSERT INTO cards
-             (board_id,column_id,position,title,description,harness,model,effort,permission_mode,
-              session,space_kind,space_ref,space_cwd,status,session_id)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,'idle',NULL)",
-            params![
-                board_id,
-                column_id,
-                end,
-                p.title,
-                description,
-                harness,
-                p.model,
-                effort,
-                p.permission_mode,
-                p.session,
-                space_kind,
-                p.space_ref,
-                p.space_cwd,
-            ],
+        constraints::reject_duplicate(
+            self.conn.execute(
+                "INSERT INTO cards
+                 (board_id,column_id,position,title,description,harness,model,effort,permission_mode,
+                  session,space_kind,space_ref,space_cwd,status,session_id,
+                  external_source,external_key,external_url)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,'idle',NULL,?14,?15,?16)",
+                params![
+                    board_id,
+                    column_id,
+                    end,
+                    p.title,
+                    description,
+                    harness,
+                    p.model,
+                    effort,
+                    p.permission_mode,
+                    p.session,
+                    space_kind,
+                    p.space_ref,
+                    p.space_cwd,
+                    p.external_source,
+                    p.external_key,
+                    p.external_url,
+                ],
+            ),
+            || match (&p.external_source, &p.external_key) {
+                (Some(s), Some(k)) => constraints::duplicate_external(s, k),
+                _ => "duplicate card".to_string(),
+            },
         )?;
         let id = self.conn.last_insert_rowid();
         if let Some(pos) = p.position {
@@ -196,26 +224,36 @@ impl Db {
         let space_kind = p.space_kind.unwrap_or(SpaceKind::Workspace).as_str();
         let effort = p.effort.map(|e| e.as_str());
         let tx = self.conn.unchecked_transaction()?;
-        tx.execute(
-            "INSERT INTO cards
-             (board_id,column_id,position,title,description,harness,model,effort,permission_mode,
-              session,space_kind,space_ref,space_cwd,status,session_id)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,'idle',NULL)",
-            params![
-                board_id,
-                column_id,
-                end,
-                p.title,
-                description,
-                harness,
-                p.model,
-                effort,
-                p.permission_mode,
-                p.session,
-                space_kind,
-                p.space_ref,
-                p.space_cwd,
-            ],
+        constraints::reject_duplicate(
+            tx.execute(
+                "INSERT INTO cards
+                 (board_id,column_id,position,title,description,harness,model,effort,permission_mode,
+                  session,space_kind,space_ref,space_cwd,status,session_id,
+                  external_source,external_key,external_url)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,'idle',NULL,?14,?15,?16)",
+                params![
+                    board_id,
+                    column_id,
+                    end,
+                    p.title,
+                    description,
+                    harness,
+                    p.model,
+                    effort,
+                    p.permission_mode,
+                    p.session,
+                    space_kind,
+                    p.space_ref,
+                    p.space_cwd,
+                    p.external_source,
+                    p.external_key,
+                    p.external_url,
+                ],
+            ),
+            || match (&p.external_source, &p.external_key) {
+                (Some(s), Some(k)) => constraints::duplicate_external(s, k),
+                _ => "duplicate card".to_string(),
+            },
         )?;
         let card_id = tx.last_insert_rowid();
         if p.position.is_some() {
@@ -321,10 +359,15 @@ impl Db {
             Patch::Clear => c.space_cwd = None,
             Patch::Set(v) => c.space_cwd = Some(v.clone()),
         }
+        match &p.external_url {
+            Patch::Unchanged => {}
+            Patch::Clear => c.external_url = None,
+            Patch::Set(v) => c.external_url = Some(v.clone()),
+        }
         self.conn.execute(
             "UPDATE cards SET title=?1,description=?2,harness=?3,model=?4,effort=?5,
              permission_mode=?6,session=?7,space_kind=?8,space_ref=?9,space_cwd=?10,
-             updated_at=datetime('now') WHERE id=?11",
+             external_url=?11,updated_at=datetime('now') WHERE id=?12",
             params![
                 c.title,
                 c.description,
@@ -336,6 +379,7 @@ impl Db {
                 c.space_kind.as_str(),
                 c.space_ref,
                 c.space_cwd,
+                c.external_url,
                 c.id,
             ],
         )?;

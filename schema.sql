@@ -1,6 +1,6 @@
 -- herdr-board SQLite schema (WAL mode; boardd is the only writer).
--- This file is the CURRENT (schema v15) shape: a fresh DB is created directly
--- from it and stamped `PRAGMA user_version = 15`. Existing databases are upgraded
+-- This file is the CURRENT (schema v16) shape: a fresh DB is created directly
+-- from it and stamped `PRAGMA user_version = 16`. Existing databases are upgraded
 -- by migrations in board-core/src/db/migrations.rs (kept in sync with this file).
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
@@ -110,6 +110,12 @@ CREATE TABLE cards (
   created_at      TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
   archived_at     TEXT,                        -- NULL = active; timestamp = archived
+  -- Generic external-tracker identity (e.g. Jira). NULL/NULL = not linked;
+  -- once linked, (board_id, external_source, external_key) is unique so a
+  -- given external issue can be imported at most once per board.
+  external_source TEXT,                        -- e.g. 'jira'; NULL = not linked
+  external_key    TEXT,                        -- e.g. 'PROJ-123'
+  external_url    TEXT,                        -- best-effort browse URL
   CHECK (
     (status = 'awaiting' AND awaiting_reason IS NOT NULL
       AND awaiting_reason IN ('agent_done','idle_expired'))
@@ -117,6 +123,10 @@ CREATE TABLE cards (
     (status <> 'awaiting' AND awaiting_reason IS NULL)
   )
 );
+
+-- One external issue links to at most one card per board.
+CREATE UNIQUE INDEX idx_cards_external ON cards(board_id, external_source, external_key)
+  WHERE external_source IS NOT NULL AND external_key IS NOT NULL;
 
 CREATE TABLE comments (
   id         INTEGER PRIMARY KEY,

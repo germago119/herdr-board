@@ -721,6 +721,7 @@ mod boards;
 mod cards;
 mod comments;
 mod discovery;
+mod jira;
 mod lifecycle;
 mod panes;
 mod parity;

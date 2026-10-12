@@ -6,14 +6,14 @@ named Herdr sessions.
 
 Requires **Herdr >= 0.9.0 speaking socket protocol 22** (including 0.9.1), Git, and a Rust
 toolchain with `cargo`; Linux and macOS are supported. The board-side compatibility contract remains board protocol v1 and
-SQLite schema v15. See the README for the one-line install command itself.
+SQLite schema v16. See the README for the one-line install command itself.
 
 | Component | Required support level | How to verify |
 |---|---|---|
 | Herdr binary | >= 0.9.0 with protocol 22 | `herdr --version` (e.g. `herdr 0.9.0` or `herdr 0.9.1`) |
 | Herdr socket | protocol 22 | `herdr api schema --json` → top-level `protocol: 22`; a running session's `herdr api snapshot` also reports `version` and `protocol` |
 | Board socket | v1 | `docs/protocol.md` and `board-core::protocol` |
-| SQLite | schema v15 | `schema.sql` and `board-core::db` migrations |
+| SQLite | schema v16 | `schema.sql` and `board-core::db` migrations |
 | Pi integration | v8 for precise Pi lifecycle/session signals | `herdr integration status` |
 | Claude integration | v7 for precise Claude lifecycle/session signals | `herdr integration status` |
 | Antigravity CLI integration | v1 for the `agy` conversation-id capture (resume/retry/rescue) | `herdr integration status` |

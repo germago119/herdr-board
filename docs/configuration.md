@@ -40,6 +40,42 @@ the daemon sets on the reopened pane along with `BOARD_RESCUE=1` (the run's argv
 materialized, so there is no placeholder left to substitute). Without it, focusing such a run is
 refused explicitly rather than starting a fresh conversation that would re-run the task.
 
+## Jira integration (opt-in)
+
+Disabled by default — omitting `[jira]` entirely, or leaving `enabled = false`, preserves all
+non-Jira behavior and tests unchanged. herdr-board never reads or stores Jira credentials: every
+call shells out to your own already-authenticated `jira` CLI (jira-cli v1.7.0).
+
+```toml
+[jira]
+enabled = true
+executable = "jira"        # resolved on $PATH, or an absolute path
+project = "PROJ"           # required when enabled, unless import passes --jira-project
+jql = "assignee = currentUser() AND sprint in openSprints()"
+page_size = 100             # jira-cli's documented --paginate maximum
+board = "Sprint board"      # optional; else "Jira: <project>"
+
+[jira.status_map]           # Jira status name (lowercased) -> category; unmapped -> "backlog"
+"done" = "done"
+"in progress" = "in_progress"
+
+[jira.transitions]          # category -> the exact `jira issue move KEY <action>` action name
+backlog = "Backlog"
+in_progress = "In Progress"
+done = "Done"
+```
+
+`board jira import [--jira-project KEY] [--jql JQL] [--board-name NAME]` creates or selects the
+named board (three manual columns `Backlog`/`In Progress`/`Done`, created if missing, matched
+case-insensitively if already present under different casing) and imports/updates the current JQL's
+issues as linked cards — it never dispatches an agent. When `[jira].enabled = true`, moving a linked
+card across columns onto one of those three (mouse drag, keyboard `m`, or `board move` — all reach
+the same `card.move`) also transitions the linked Jira issue via
+`jira -p PROJECT issue move KEY STATE` and verifies the resulting status before the local move
+commits; a same-column reorder never contacts Jira. See [`design.md`](design.md)'s Jira integration
+section and [`protocol.md`](protocol.md)'s `### jira` for the full contract, including the
+`Error::JiraUnavailable` / `Error::ReconciliationRequired` failure modes.
+
 ### The built-in `codex` vs. headless `codex exec`
 
 `codex` is a **built-in harness** dispatched as a Herdr-managed interactive agent (kind `"codex"`).

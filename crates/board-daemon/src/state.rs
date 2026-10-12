@@ -158,6 +158,9 @@ pub struct Daemon {
     pub wall_now_ms: fn() -> i64,
     pub config: Config,
     pub settings: DaemonSettings,
+    /// `[jira]` config: disabled by default, so every non-Jira behavior and
+    /// test is unaffected unless a site opts in.
+    pub jira: board_core::config::JiraConfig,
     pub db_path: PathBuf,
     pub socket_path: PathBuf,
     pub spawner: Arc<dyn Spawner>,
@@ -172,6 +175,9 @@ pub struct Daemon {
     /// Serializes complete dispatch passes so capacity/space claims remain
     /// authoritative until their launches have either registered or failed.
     pub dispatch_pass: AsyncMutex<()>,
+    /// Serializes Jira transitions without holding the scheduler or store
+    /// locks across subprocess and network I/O.
+    pub jira_sync: Mutex<()>,
     pub sched: Mutex<Sched>,
     pub watch: Mutex<WatchState>,
     shutdown_tx: watch::Sender<bool>,
@@ -186,6 +192,7 @@ impl Daemon {
         store: Store,
         config: Config,
         settings: DaemonSettings,
+        jira: board_core::config::JiraConfig,
         db_path: PathBuf,
         socket_path: PathBuf,
         spawner: Arc<dyn Spawner>,
@@ -200,6 +207,7 @@ impl Daemon {
             wall_now_ms: system_wall_now_ms,
             config,
             settings,
+            jira,
             db_path,
             socket_path,
             spawner,
@@ -208,6 +216,7 @@ impl Daemon {
             events_tx,
             dispatch_tx,
             dispatch_pass: AsyncMutex::new(()),
+            jira_sync: Mutex::new(()),
             sched: Mutex::new(Sched::default()),
             watch: Mutex::new(WatchState::default()),
             shutdown_tx,

@@ -8,7 +8,7 @@ use crate::{Error, Result};
 const SCHEMA_SQL: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../schema.sql"));
 
 /// The latest schema version embedded in [`SCHEMA_SQL`].
-const SCHEMA_VERSION: i64 = 15;
+const SCHEMA_VERSION: i64 = 16;
 
 /// v1 → v2 migration. SQLite cannot alter a CHECK constraint or drop a column
 /// in place, so `cards` is rebuilt. Legacy `space_kind` values `cwd`/`worktree`
@@ -303,6 +303,18 @@ END;
 /// `user_version` only advances after both columns exist.
 const V15_MIGRATION_TABLES: [&str; 2] = ["projects", "boards"];
 
+/// v15 → v16 migration: generic external-tracker identity on cards (e.g.
+/// Jira), so an imported issue can be found and updated idempotently instead
+/// of relying on a fragile description marker. Three plain `ALTER TABLE`s
+/// (every existing row keeps its bytes; the new columns default `NULL` =
+/// "not linked") plus the uniqueness index, applied only when missing so a
+/// replay over an already-upgraded shape or a crash between steps stays
+/// stable — `user_version` only advances once all four are present.
+const V16_EXTERNAL_COLUMNS: [&str; 3] = ["external_source", "external_key", "external_url"];
+const V16_EXTERNAL_INDEX_SQL: &str = "CREATE UNIQUE INDEX idx_cards_external \
+     ON cards(board_id, external_source, external_key) \
+     WHERE external_source IS NOT NULL AND external_key IS NOT NULL";
+
 impl Db {
     /// Apply migrations gated on `PRAGMA user_version`. Idempotent.
     ///
@@ -552,6 +564,36 @@ impl Db {
                             "ALTER TABLE {table} ADD COLUMN archived_at TEXT"
                         ))?;
                     }
+                }
+            }
+            // v16 runs after v15 (both act on `cards`/`boards`, not the
+            // rebuilt `boards` table itself): each guarded ALTER/CREATE INDEX
+            // is idempotent on replay, and a failure aborts the open without
+            // advancing `user_version`.
+            if version < 16 {
+                for column in V16_EXTERNAL_COLUMNS {
+                    let has_column: bool = self.conn.query_row(
+                        &format!(
+                            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('cards')
+                             WHERE name='{column}')"
+                        ),
+                        [],
+                        |r| r.get(0),
+                    )?;
+                    if !has_column {
+                        self.conn.execute_batch(&format!(
+                            "ALTER TABLE cards ADD COLUMN {column} TEXT"
+                        ))?;
+                    }
+                }
+                let has_index: bool = self.conn.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM sqlite_master
+                     WHERE type='index' AND name='idx_cards_external')",
+                    [],
+                    |r| r.get(0),
+                )?;
+                if !has_index {
+                    self.conn.execute_batch(V16_EXTERNAL_INDEX_SQL)?;
                 }
             }
             self.conn

@@ -111,6 +111,9 @@ mod tests {
             created_at: String::new(),
             updated_at: String::new(),
             archived_at: None,
+            external_source: None,
+            external_key: None,
+            external_url: None,
             labels: CardLabels::default(),
         }
     }
