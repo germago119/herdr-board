@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+
+- [#143](https://github.com/nelsonPires5/herdr-board/pull/143) fix: Filter dead pane IDs on `pane_not_found` subscribe rejection so the daemon stops watching panes that no longer exist.
+
 ## [0.19.0] - 2026-10-06
 
 ### Added
