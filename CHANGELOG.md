@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-10-14
+
+### Fixed
+
+- [#143](https://github.com/nelsonPires5/herdr-board/pull/143) fix: Filter dead pane IDs on `pane_not_found` subscribe rejection so the daemon stops watching panes that no longer exist.
+
 ## [0.19.0] - 2026-10-06
 
 ### Added
@@ -453,7 +459,8 @@ a visible herdr pane. Ships as a single `board` binary (TUI + daemon + CLI) and 
 - **Packaging.** `herdr-plugin.toml` manifest, and `scripts/` for build, install (guarded behind
   `--yes`), the open-or-focus launcher, a raw protocol client, and a live-herdr e2e smoke test.
 
-[Unreleased]: https://github.com/nelsonPires5/herdr-board/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/nelsonPires5/herdr-board/compare/v0.19.1...HEAD
+[0.19.1]: https://github.com/nelsonPires5/herdr-board/releases/tag/v0.19.1
 [0.19.0]: https://github.com/nelsonPires5/herdr-board/releases/tag/v0.19.0
 [0.18.0]: https://github.com/nelsonPires5/herdr-board/releases/tag/v0.18.0
 [0.17.0]: https://github.com/nelsonPires5/herdr-board/releases/tag/v0.17.0
